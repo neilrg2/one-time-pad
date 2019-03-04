@@ -15,13 +15,20 @@ int main(int argc, const char *argv[])
 {
     int socketFD, portNumber, charsWritten, charsRead;
     int plain_text_file_descriptor, key_file_descriptor;
-    int i, key_char_count, plain_text_char_count;
+    int i, key_char_count, plain_text_char_count, count = 0;
     
     char charBuffer;
-    char buffer[256];
     
     SOCKADDR_IN serverAddress;
     HOSTENT *serverHostInfo;
+    
+    
+    /* Ensure appropriate number of arguments - FORMAT: otp_enc plaintext key port */
+    if (argc < 4)
+    {
+        fprintf(stderr, "USAGE: %s hostname key port\n", argv[0]);
+        exit(0);    /* Check usage and args */
+    }
     
 /*****************************************************************************************/
     
@@ -55,7 +62,7 @@ int main(int argc, const char *argv[])
     
     if (key_char_count < plain_text_char_count)
     {
-        fprintf(stderr, "Plain text length exceeds the key length.\n");
+        fprintf(stderr, "ERROR: Plain text length exceeds the key length.\n");
         
         close(plain_text_file_descriptor);
         close(key_file_descriptor);
@@ -72,7 +79,7 @@ int main(int argc, const char *argv[])
         read(plain_text_file_descriptor, &charBuffer, sizeof(charBuffer));
         if (charBuffer != 32 && (charBuffer < 65 || charBuffer > 90))
         {
-            fprintf(stderr, "Bad character detected in \"%s\".\n", argv[1]);
+            fprintf(stderr, "ERROR: Bad character detected in \"%s\".\n", argv[1]);
             
             close(plain_text_file_descriptor);
             close(key_file_descriptor);
@@ -94,76 +101,123 @@ int main(int argc, const char *argv[])
         }
     }
     
-    
-    close(plain_text_file_descriptor);
-    close(key_file_descriptor);
+    lseek(plain_text_file_descriptor, 0, SEEK_SET);
+    lseek(key_file_descriptor, 0, SEEK_SET);
     
 /*****************************************************************************************/
     
-//    if (argc < 3)
-//    {
-//        fprintf(stderr, "USAGE: %s hostname port\n", argv[0]);
-//        exit(0);    /* Check usage and args */
-//    }
-//
-//    /* Set up server address struct */
-//    memset((char *)&serverAddress, '\0', sizeof(serverAddress));    // clear out struct
-//    portNumber = atoi(argv[3]); // get the port number convert to an integer from a string
-//
-//
-//    serverAddress.sin_family = AF_INET;
-//    serverAddress.sin_port = htons(portNumber);
-//    serverHostInfo = gethostbyname("localhost");        // convert the machine name into a special address
-//    if (!serverHostInfo)
-//    {
-//        fprintf(stderr, "CLIENT: ERROR, no such host\n");
-//        exit(0);
-//    }
-//    // Copy in the address
-//    memcpy((char*)&serverAddress.sin_addr.s_addr, (char*)serverHostInfo->h_addr, serverHostInfo->h_length); // Copy in the address
-//
-//
-//    socketFD = socket(AF_INET, SOCK_STREAM, 0); /* Create socket */
-//    if (socketFD < 0)
-//    {
-//        fprintf(stderr, "Socket creation failed.\n");
-//        exit(1);
-//    }
-//
-//    /* Connect to server */
-//    if (connect(socketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
-//    {
-//        fprintf(stderr, "CLIENT: ERROR connecting.\n");
-//    }
-//
-//    printf("CLIENT: Enter text to send to the server, and then hit ENTER: ");
-//    memset(buffer, '\0', 256);
-//    fgets(buffer, sizeof(buffer) - 1, stdin);                   /* User input */
-//    buffer[strcspn(buffer, "\n")] = '\0';
-//
-//    charsWritten = (int)send(socketFD, buffer, strlen(buffer), 0);   /* Write to the server */
-//    if (charsWritten < 0)
-//    {
-//        fprintf(stderr, "CLIENT: ERROR writing to socket.\n");
-//    }
-//    if (charsWritten < strlen(buffer))
-//    {
-//        printf("CLIENT: WARNING: Not all data written to socket!\n");
-//    }
-//
-//    memset(buffer, '\0', sizeof(buffer));
-//
-//    /* Get return message from server */
-//    charsRead = (int)recv(socketFD, buffer, sizeof(buffer) - 1, 0);  /* Leave \0 at the end */
-//    if (charsRead < 0)
-//    {
-//        fprintf(stderr, "CLIENT: ERROR reading from socket.\n");
-//    }
+
+    /* Set up server address struct */
+    memset((char *)&serverAddress, '\0', sizeof(serverAddress));    // clear out struct
+    portNumber = atoi(argv[3]); // get the port number convert to an integer from a string
+    if (portNumber == 0)
+    {
+        fprintf(stderr, "Not a valid port value.\n");
+        exit(1);
+    }
+
+    
+    /* Set up port and server information */
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons(portNumber);
+    serverHostInfo = gethostbyname("localhost");        // convert the machine name into a special address
+    if (!serverHostInfo)
+    {
+        fprintf(stderr, "CLIENT: ERROR, no such host\n");
+        exit(0);
+    }
+    
+    /* Copy in the address */
+    memcpy((char*)&serverAddress.sin_addr.s_addr, (char*)serverHostInfo->h_addr, serverHostInfo->h_length); // Copy in the address
+
+    /* Create socket */
+    socketFD = socket(AF_INET, SOCK_STREAM, 0);
+    if (socketFD < 0)
+    {
+        fprintf(stderr, "Socket creation failed.\n");
+        exit(1);
+    }
+
+    /* Connect to server */
+    if (connect(socketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
+    {
+        fprintf(stderr, "CLIENT: ERROR connecting.\n");
+    }
+
+    
+    /* Preparing to send plain text and generated key to server */
+    char buffer[plain_text_char_count];
+    char buffer2[key_char_count];
+    memset(buffer, '\0', plain_text_char_count);
+    memset(buffer2, '\0', key_char_count);
+    
+    dup2(plain_text_file_descriptor, 0);    /* redirect stdin */
+    while (1)
+    {
+        charBuffer = getchar();
+        if (charBuffer == EOF) { break; }
+        if (charBuffer == '\n')
+        {
+            count = 0;
+            break;
+        }
+        
+        buffer[count++] = charBuffer;
+    }
+    
+    dup2(key_file_descriptor, STDIN_FILENO);    /* redirect stdin */
+    while (1)
+    {
+        charBuffer = getchar();
+        if (charBuffer == EOF) { break; }
+        if (charBuffer == '\n')
+        {
+            count = 0;
+            break;
+        }
+        
+        buffer2[count++] = charBuffer;
+    }
+    
+    
+    /* Write to the server */
+    charsWritten = (int)send(socketFD, buffer, strlen(buffer), 0);
+    if (charsWritten < 0)
+    {
+        fprintf(stderr, "CLIENT: ERROR writing to socket.\n");
+    }
+    if (charsWritten < strlen(buffer))
+    {
+        printf("CLIENT: WARNING: Not all data written to socket!\n");
+    }
+
+    memset(buffer, '\0', sizeof(buffer));
+
+    /* Get return message from server */
+    charsRead = (int)recv(socketFD, buffer, strlen(buffer) - 1, 0);  /* Leave \0 at the end */
+    if (charsRead < 0)
+    {
+        fprintf(stderr, "CLIENT: ERROR reading from socket.\n");
+    }
+
+    charsWritten = (int)send(socketFD, buffer2, strlen(buffer2), 0);
+    if (charsWritten < 0)
+    {
+        fprintf(stderr, "CLIENT: ERROR writing to socket.\n");
+    }
+    if (charsWritten < strlen(buffer2))
+    {
+        printf("CLIENT: WARNING: Not all data written to socket!\n");
+    }
+    
 //    printf("CLIENT: I received this from the server: \"%s\"\n", buffer);
 //    close(socketFD);
+//
     
     
     
     
+    close(plain_text_file_descriptor);
+    close(key_file_descriptor);
     return 0;
 }
