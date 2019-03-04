@@ -10,6 +10,9 @@
 #include <fcntl.h>
 
 #define BUFFER_SIZE         1024
+#define ENCRYPT_SUBTRACT    130
+#define ENCRYPT_MODULO      26
+#define ASCII               65
 
 
 typedef struct sockaddr_in SOCKADDR_IN;
@@ -20,13 +23,14 @@ int main(int argc, const char * argv[]) {
     
     int exitMethod;
     int establishedConnectionFD;
-    int portNumber;
+    int i, encrypt_value, portNumber;
     pid_t spawnPID;
     ssize_t charsRead;
     socklen_t sizeOfClientInfo;
     
     char buffer[BUFFER_SIZE], buffer2[BUFFER_SIZE];
     char messageReceived[30];
+    char *cipher_string;
     
     memset(messageReceived, '\0', sizeof(messageReceived));
     sprintf(messageReceived, "Message Received");
@@ -77,23 +81,40 @@ int main(int argc, const char * argv[]) {
             /* Spawned child process */
             memset(buffer, '\0', BUFFER_SIZE);
             memset(buffer2, '\0', BUFFER_SIZE);
+            
             charsRead = recv(establishedConnectionFD, buffer, BUFFER_SIZE - 1, 0);
             if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
-            printf("Message: %s\n", buffer);
             
-            
-            charsRead = send(establishedConnectionFD, messageReceived, sizeof(messageReceived), 0);
+            charsRead = send(establishedConnectionFD, messageReceived, strlen(messageReceived), 0);
             if (charsRead < 0) { fprintf(stderr, "Error writing to the socket.\n"); }
             
-//            charsRead = recv(establishedConnectionFD, buffer2, BUFFER_SIZE - 1, 0);
-//            if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
-//            printf("Message: %s\n", buffer2);
-//
-//            charsRead = send(establishedConnectionFD, messageReceived, sizeof(messageReceived), 0);
-//            if (charsRead < 0) { fprintf(stderr, "Error writing to the socket.\n"); }
+            charsRead = recv(establishedConnectionFD, buffer2, BUFFER_SIZE - 1, 0);
+            if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
+
+            cipher_string = (char *)malloc(sizeof(char) * strlen(buffer));  /* Set cipher string to length of plain text (buffer #1) */
+            memset(cipher_string, '\0', strlen(buffer));
+            
+            /* Encryption technique */
+            for (i = 0; i < strlen(buffer); i++)
+            {
+                encrypt_value = ((buffer[i] + buffer2[i]) - ENCRYPT_SUBTRACT);
+                if (encrypt_value < 0)
+                {
+                    encrypt_value *= -1;
+                }
+//                cipher_string[i] = (encrypt_value >= ENCRYPT_MODULO) ? (encrypt_value - ENCRYPT_MODULO) + ASCII : encrypt_value + ASCII;
+                
+                if (encrypt_value > ENCRYPT_MODULO) { cipher_string[i] = (encrypt_value - ENCRYPT_MODULO) + ASCII; }
+                else if (encrypt_value == ENCRYPT_MODULO) { cipher_string[i] = 32; }
+                else { cipher_string[i] = encrypt_value + ASCII; }
+            }
+            
+            printf("Cipher Text: %s\n", cipher_string);
+            
             
             close(establishedConnectionFD);
-
+            free(cipher_string);
+            
             exit(0);
             break;
 
