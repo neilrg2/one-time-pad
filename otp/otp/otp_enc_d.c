@@ -13,15 +13,10 @@
 #define ENCRYPT_SUBTRACT    130
 #define ENCRYPT_MODULO      27
 #define ASCII               65
+#define FALSE               "false"
+#define TRUE                "true"
 
-//enum Alphabet {
-//    A = 0, B = 1, C = 2, D = 3, E = 4, F = 5, G = 6,
-//    H = 7, I = 8, J = 9, K = 10, L = 11, M = 12, N = 13,
-//    O = 14, P = 15, Q = 16, R = 17, S = 18, T = 19, U = 20,
-//    V = 21, W = 22, X = 23, Y = 24, Z = 25
-//};
 
-typedef enum Alphabet ALPHABET;
 typedef struct sockaddr_in SOCKADDR_IN;
 
 int getCharacterValue(char);
@@ -77,7 +72,7 @@ int main(int argc, const char * argv[]) {
         if (establishedConnectionFD < 0) { fprintf(stderr, "Accept error on connection.\n"); }
 
 
-        spawnPID = fork();
+        spawnPID = fork();  /* Fork call */
         switch (spawnPID)
         {
             case -1:
@@ -94,6 +89,23 @@ int main(int argc, const char * argv[]) {
                 memset(buffer, '\0', BUFFER_SIZE);
                 memset(buffer2, '\0', BUFFER_SIZE);
                 
+                
+                /* Permission check between client and server */
+                charsRead = recv(establishedConnectionFD, buffer, BUFFER_SIZE - 1, 0);
+                if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
+                if (!strstr(argv[0], buffer))
+                {
+                    charsRead = send(establishedConnectionFD, FALSE, strlen(FALSE), 0);
+                    
+                    close(establishedConnectionFD);
+                    exit(1);
+                }
+                else { charsRead = send(establishedConnectionFD, TRUE, strlen(TRUE), 0); }
+                
+                memset(buffer, '\0', BUFFER_SIZE);
+                
+                
+                /* Receiving plain text and generated key text for encryption */
                 charsRead = recv(establishedConnectionFD, buffer, BUFFER_SIZE - 1, 0);
                 if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
                 
@@ -107,8 +119,13 @@ int main(int argc, const char * argv[]) {
                 memset(cipher_string, '\0', strlen(buffer));
                 
                 
-                
-                /* Encryption technique */
+                /* Encryption technique: buffer is plain text, buffer2 is the generated key.
+                  A helper function is utilized (I apologize ahead of time for the really long switch
+                  statement) to be able to handle the space character more easily. I initially performed
+                  the methods provided in the specifications simply without the helper but was having
+                  a hard time handling the space as my method involves using ASCII codes and the code
+                  for space was 32 and the capital letters were 65-90 which made it awkward and ultimately
+                  very confusing. Setting each from 0-26 made the process much easier. */
                 for (i = 0; i < strlen(buffer); i++)
                 {
                     charVal1 = getCharacterValue(buffer[i]);

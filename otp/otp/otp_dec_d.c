@@ -13,7 +13,8 @@
 #define ENCRYPT_ADDITION    130
 #define ENCRYPT_MODULO      27
 #define ASCII               65
-
+#define FALSE               "false"
+#define TRUE                "true"
 
 typedef struct sockaddr_in SOCKADDR_IN;
 
@@ -70,7 +71,7 @@ int main(int argc, const char * argv[]) {
         if (establishedConnectionFD < 0) { fprintf(stderr, "Accept error on connection.\n"); }
         
         
-        spawnPID = fork();
+        spawnPID = fork();  /* Fork call */
         switch (spawnPID)
         {
             case -1:
@@ -87,6 +88,23 @@ int main(int argc, const char * argv[]) {
                 memset(buffer, '\0', BUFFER_SIZE);
                 memset(buffer2, '\0', BUFFER_SIZE);
                 
+                
+                /* Permission check between client and server */
+                charsRead = recv(establishedConnectionFD, buffer, BUFFER_SIZE - 1, 0);
+                if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
+                if (!strstr(argv[0], buffer))
+                {
+                    charsRead = send(establishedConnectionFD, FALSE, strlen(FALSE), 0);
+                    
+                    close(establishedConnectionFD);
+                    exit(1);
+                }
+                else { charsRead = send(establishedConnectionFD, TRUE, strlen(TRUE), 0); }
+                
+                memset(buffer, '\0', BUFFER_SIZE);
+                
+                
+                /* Receiving cipher text and generated key text for decryption */
                 charsRead = recv(establishedConnectionFD, buffer, BUFFER_SIZE - 1, 0);
                 if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
                 
@@ -100,10 +118,13 @@ int main(int argc, const char * argv[]) {
                 memset(plain_string, '\0', strlen(buffer));
                 
                 
-                
-                
-                
-                /* Decryption technique */
+                /* Decryption technique: buffer is plain text, buffer2 is the generated key.
+                 A helper function is utilized (I apologize ahead of time for the really long switch
+                 statement) to be able to handle the space character more easily. I initially performed
+                 the methods provided in the specifications simply without the helper but was having
+                 a hard time handling the space as my method involves using ASCII codes and the code
+                 for space was 32 and the capital letters were 65-90 which made it awkward and ultimately
+                 very confusing. Setting each from 0-26 made the process much easier. */
                 for (i = 0; i < strlen(buffer); i++)
                 {
                     if (buffer[i] == 32) { buffer[i] = 91; }
@@ -126,8 +147,6 @@ int main(int argc, const char * argv[]) {
                 }
 
                 
-                
-
                 charsRead = send(establishedConnectionFD, plain_string, strlen(plain_string), 0);
                 if (charsRead < 0) { fprintf(stderr, "Error writing to the socket.\n"); }
                 

@@ -33,13 +33,13 @@ int main(int argc, const char *argv[])
         exit(0);    /* Check usage and args */
     }
     
-/*****************************************************************************************/
+    /*****************************************************************************************/
     
     /* Block contains file validation: 1) Checks that plain text and generated key file are valid
-                                          files and can be opened
-                                       2) Retrieves character counts for both files and checks to see
-                                          that the generated key is large enough to handle the plain text file
-                                       3) Checks for any bad characters contained in both files
+     files and can be opened
+     2) Retrieves character counts for both files and checks to see
+     that the generated key is large enough to handle the plain text file
+     3) Checks for any bad characters contained in both files
      
      Program will exit prematurely with exit code 1 if all of the above is not fulfilled */
     
@@ -107,9 +107,9 @@ int main(int argc, const char *argv[])
     lseek(plain_text_file_descriptor, 0, SEEK_SET);
     lseek(key_file_descriptor, 0, SEEK_SET);
     
-/*****************************************************************************************/
+    /*****************************************************************************************/
     
-
+    
     /* Set up server address struct */
     memset((char *)&serverAddress, '\0', sizeof(serverAddress));    // clear out struct
     portNumber = atoi(argv[3]); // get the port number convert to an integer from a string
@@ -118,7 +118,7 @@ int main(int argc, const char *argv[])
         fprintf(stderr, "Not a valid port value.\n");
         exit(1);
     }
-
+    
     
     /* Set up port and server information */
     serverAddress.sin_family = AF_INET;
@@ -132,7 +132,7 @@ int main(int argc, const char *argv[])
     
     /* Copy in the address */
     memcpy((char*)&serverAddress.sin_addr.s_addr, (char*)serverHostInfo->h_addr, serverHostInfo->h_length); // Copy in the address
-
+    
     /* Create socket */
     socketFD = socket(AF_INET, SOCK_STREAM, 0);
     if (socketFD < 0)
@@ -140,16 +140,16 @@ int main(int argc, const char *argv[])
         fprintf(stderr, "Socket creation failed.\n");
         exit(1);
     }
-
+    
     /* Connect to server */
     if (connect(socketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
     {
         fprintf(stderr, "CLIENT: ERROR connecting to port %d.\n", portNumber);
         exit(2);
     }
-
+    
     /* Ensure client is connecting to a server it is allowed to connect to.
-       otp_enc cannot connect to otp_dec_d */
+       otp_dec cannot connect to otp_enc_d */
     memset(bufferCheck, '\0', sizeof(bufferCheck));
     
     charsWritten = (int)send(socketFD, argv[0], strlen(argv[0]), 0);
@@ -203,6 +203,7 @@ int main(int argc, const char *argv[])
     
     /* Write to the server */
     charsWritten = (int)send(socketFD, buffer, strlen(buffer), 0);
+    
     if (charsWritten < 0)
     {
         fprintf(stderr, "CLIENT: ERROR writing to socket.\n");
@@ -211,17 +212,17 @@ int main(int argc, const char *argv[])
     {
         printf("CLIENT: WARNING: Not all data written to socket!\n");
     }
-
+    
     memset(buffer, '\0', sizeof(buffer));
-
+    
     /* Get return message from server */
     charsRead = (int)recv(socketFD, buffer, sizeof(buffer) - 1, 0);  /* Leave \0 at the end */
     if (charsRead < 0)
     {
         fprintf(stderr, "CLIENT: ERROR reading from socket.\n");
     }
-
-   
+    
+    
     charsWritten = (int)send(socketFD, buffer2, strlen(buffer2), 0);
     if (charsWritten < 0)
     {
@@ -241,7 +242,7 @@ int main(int argc, const char *argv[])
     }
     
     printf("%s\n", buffer);
-
+    
     close(socketFD);
     close(plain_text_file_descriptor);
     close(key_file_descriptor);
