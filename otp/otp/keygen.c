@@ -10,6 +10,7 @@
 int main(int argc, const char *argv[])
 {
     srand(time(NULL));
+    if (argc < 2) { fprintf(stderr, "Key length was not specified.\n"); exit(1); }
     
     char *key_ptr;
     

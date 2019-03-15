@@ -7,9 +7,11 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
 
-#define FALSE       "false"
-#define TRUE        "true"
+#define BUFFER_SIZE     128000
+#define FALSE           "false"
+#define TRUE            "true"
 
 typedef struct sockaddr_in SOCKADDR_IN;
 typedef struct hostent HOSTENT;
@@ -18,7 +20,7 @@ int main(int argc, const char *argv[])
 {
     int socketFD, portNumber, charsWritten, charsRead;
     int plain_text_file_descriptor, key_file_descriptor;
-    int i, key_char_count, plain_text_char_count, count = 0;
+    int i, key_char_count, cipher_text_char_count, count = 0;
     
     char charBuffer, bufferCheck[20];
     
@@ -60,10 +62,10 @@ int main(int argc, const char *argv[])
     }
     
     /* Get character counts for both the plain text file and the generated key file */
-    plain_text_char_count = (int)lseek(plain_text_file_descriptor, 0, SEEK_END);
+    cipher_text_char_count = (int)lseek(plain_text_file_descriptor, 0, SEEK_END);
     key_char_count = (int)lseek(key_file_descriptor, 0, SEEK_END);
     
-    if (key_char_count < plain_text_char_count)
+    if (key_char_count < cipher_text_char_count)
     {
         fprintf(stderr, "ERROR: Plain text length exceeds the key length.\n");
         
@@ -77,7 +79,7 @@ int main(int argc, const char *argv[])
     lseek(key_file_descriptor, 0, SEEK_SET);
     
     /* Check for bad characters in plain text file (excludes newline character at the end) */
-    for (i = 0; i < plain_text_char_count - 1; i++)
+    for (i = 0; i < cipher_text_char_count - 1; i++)
     {
         read(plain_text_file_descriptor, &charBuffer, sizeof(charBuffer));
         if (charBuffer != 32 && (charBuffer < 65 || charBuffer > 90))
@@ -167,9 +169,9 @@ int main(int argc, const char *argv[])
     
     
     /* Preparing to send plain text and generated key to server */
-    char buffer[plain_text_char_count];
+    char buffer[cipher_text_char_count];
     char buffer2[key_char_count];
-    memset(buffer, '\0', plain_text_char_count);
+    memset(buffer, '\0', cipher_text_char_count);
     memset(buffer2, '\0', key_char_count);
     
     dup2(plain_text_file_descriptor, 0);    /* redirect stdin */
@@ -201,7 +203,23 @@ int main(int argc, const char *argv[])
     }
     
     
-    /* Write to the server */
+    char bytes[20], messageRec[30];
+    memset(bytes, '\0', sizeof(bytes));
+    memset(messageRec, '\0', sizeof(messageRec));
+    sprintf(bytes, "%d", (int)strlen(buffer));
+    
+    /* Send number of bytes that will be sent to the server for decryption as a string
+      that will be converted on the server into an integer */
+    send(socketFD, bytes, strlen(bytes), 0);
+    
+    
+    /* Receive message that the server received the byte message */
+    recv(socketFD, messageRec, sizeof(messageRec) - 1, 0);
+    
+    
+    int checkSend = -5;
+    
+    /* Write to the server the cipher text that will be decrypted */
     charsWritten = (int)send(socketFD, buffer, strlen(buffer), 0);
     
     if (charsWritten < 0)
@@ -212,6 +230,13 @@ int main(int argc, const char *argv[])
     {
         printf("CLIENT: WARNING: Not all data written to socket!\n");
     }
+    do
+    {
+        ioctl(socketFD, TIOCOUTQ, &checkSend);
+    } while (checkSend > 0); /* REFERENCED the ioctl block from 4.2 Verified Sending */
+    
+    checkSend = -5;
+    
     
     memset(buffer, '\0', sizeof(buffer));
     
@@ -223,6 +248,18 @@ int main(int argc, const char *argv[])
     }
     
     
+    memset(bytes, '\0', sizeof(bytes));
+    sprintf(bytes, "%d", (int)strlen(buffer2));
+    
+    /* Send the size of the generated key to the server to be converted into an integer */
+    send(socketFD, bytes, strlen(bytes), 0);
+    
+    
+    /* Receive message that the server received the byte message */
+    recv(socketFD, messageRec, sizeof(messageRec) - 1, 0);
+    
+    
+    /* Send the server the generated key text */
     charsWritten = (int)send(socketFD, buffer2, strlen(buffer2), 0);
     if (charsWritten < 0)
     {
@@ -232,13 +269,36 @@ int main(int argc, const char *argv[])
     {
         printf("CLIENT: WARNING: Not all data written to socket!\n");
     }
+    do
+    {
+        ioctl(socketFD, TIOCOUTQ, &checkSend);
+    } while (checkSend > 0); /* REFERENCED the ioctl block from 4.2 Verified Sending */
+    
+    
     
     memset(buffer, '\0', sizeof(buffer));
     
-    charsRead = (int)recv(socketFD, buffer, sizeof(buffer) - 1, 0);  /* Leave \0 at the end */
-    if (charsRead < 0)
+    char tempBuffer[BUFFER_SIZE];
+    count = 0;
+    
+    
+    /* -Receiving decrypted text from the server
+      -Storing the received data into a temporary buffer and concatenating it onto buffer.
+       The characters read is added to count each iteration. The current count is
+       subtracted from the number of bytes expected and represents the size to be read
+       into the temporary buffer. The iteration will end when count is not less than
+       the number of bytes indicating all bytes are read
+      -Server side does not need to send the size of the data as the the size can
+       be extracted from the cipher text char count */
+    while (count < cipher_text_char_count - 1)
     {
-        fprintf(stderr, "CLIENT: ERROR reading from socket.\n");
+        memset(tempBuffer, '\0', sizeof(tempBuffer));
+        
+        charsRead = (int)recv(socketFD, tempBuffer, (cipher_text_char_count - 1) - count, 0);
+        if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
+        
+        strcat(buffer, tempBuffer);
+        count += (int)charsRead;
     }
     
     printf("%s\n", buffer);

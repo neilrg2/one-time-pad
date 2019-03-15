@@ -7,9 +7,11 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
 
-#define FALSE       "false"
-#define TRUE        "true"
+#define BUFFER_SIZE     128000
+#define FALSE           "false"
+#define TRUE            "true"
 
 typedef struct sockaddr_in SOCKADDR_IN;
 typedef struct hostent HOSTENT;
@@ -109,7 +111,6 @@ int main(int argc, const char *argv[])
     
 /*****************************************************************************************/
     
-
     /* Set up server address struct */
     memset((char *)&serverAddress, '\0', sizeof(serverAddress));    // clear out struct
     portNumber = atoi(argv[3]); // get the port number convert to an integer from a string
@@ -201,7 +202,23 @@ int main(int argc, const char *argv[])
     }
     
     
-    /* Write to the server */
+    char bytes[20], messageRec[30];
+    memset(bytes, '\0', sizeof(bytes));
+    memset(messageRec, '\0', sizeof(messageRec));
+    sprintf(bytes, "%d", (int)strlen(buffer));
+    
+    
+    /* Send number of bytes that will be sent to the server for encryption as a string
+     that will be converted on the server into an integer */
+    send(socketFD, bytes, strlen(bytes), 0);
+    
+    
+    /* Receive message that the server received the byte message */
+    recv(socketFD, messageRec, sizeof(messageRec) - 1, 0);
+    
+    
+    int checkSend = -5;
+    /* Write to the server the plain text that will be encrypted */
     charsWritten = (int)send(socketFD, buffer, strlen(buffer), 0);
     if (charsWritten < 0)
     {
@@ -211,7 +228,14 @@ int main(int argc, const char *argv[])
     {
         printf("CLIENT: WARNING: Not all data written to socket!\n");
     }
-
+    do
+    {
+        ioctl(socketFD, TIOCOUTQ, &checkSend);
+    } while (checkSend > 0); /* REFERENCED the ioctl block from 4.2 Verified Sending */
+    
+    checkSend = -5;
+    
+    
     memset(buffer, '\0', sizeof(buffer));
 
     /* Get return message from server */
@@ -221,7 +245,19 @@ int main(int argc, const char *argv[])
         fprintf(stderr, "CLIENT: ERROR reading from socket.\n");
     }
 
-   
+    
+    memset(bytes, '\0', sizeof(bytes));
+    sprintf(bytes, "%d", (int)strlen(buffer2));
+    
+    /* Send the size of the generated key to the server to be converted into an integer */
+    send(socketFD, bytes, strlen(bytes), 0);
+    
+    
+    /* Receive message that the server received the byte message */
+    recv(socketFD, messageRec, sizeof(messageRec) - 1, 0);
+    
+    
+    /* Send the server the generated key text */
     charsWritten = (int)send(socketFD, buffer2, strlen(buffer2), 0);
     if (charsWritten < 0)
     {
@@ -231,17 +267,40 @@ int main(int argc, const char *argv[])
     {
         printf("CLIENT: WARNING: Not all data written to socket!\n");
     }
+    do
+    {
+        ioctl(socketFD, TIOCOUTQ, &checkSend);
+    } while (checkSend > 0); /* REFERENCED the ioctl block from 4.2 Verified Sending */
+    
     
     memset(buffer, '\0', sizeof(buffer));
     
-    charsRead = (int)recv(socketFD, buffer, sizeof(buffer) - 1, 0);  /* Leave \0 at the end */
-    if (charsRead < 0)
+    char tempBuffer[BUFFER_SIZE];
+    count = 0;
+    
+    
+    /* -Receiving encrypted text from the server
+     -Storing the received data into a temporary buffer and concatenating it onto buffer.
+     The characters read is added to count each iteration. The current count is
+     subtracted from the number of bytes expected and represents the size to be read
+     into the temporary buffer. The iteration will end when count is not less than
+     the number of bytes indicating all bytes are read
+     -Server side does not need to send the size of the data as the the size can
+     be extracted from the plain text char count */
+    while (count < plain_text_char_count - 1)
     {
-        fprintf(stderr, "CLIENT: ERROR reading from socket.\n");
+        memset(tempBuffer, '\0', sizeof(tempBuffer));
+        
+        charsRead = (int)recv(socketFD, tempBuffer, (plain_text_char_count - 1) - count, 0);
+        if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
+        
+        strcat(buffer, tempBuffer);
+        count += (int)charsRead;
     }
+
     
     printf("%s\n", buffer);
-
+    
     close(socketFD);
     close(plain_text_file_descriptor);
     close(key_file_descriptor);

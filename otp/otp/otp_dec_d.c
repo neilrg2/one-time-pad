@@ -8,8 +8,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
 
-#define BUFFER_SIZE         1024
+#define BUFFER_SIZE         128000
 #define ENCRYPT_ADDITION    130
 #define ENCRYPT_MODULO      27
 #define ASCII               65
@@ -56,9 +57,10 @@ int main(int argc, const char * argv[]) {
     }
     
     
-    /* Socket begins listening for connections */
+    /* Main block containing fork call, decryption, and communication with client */
     while (1)
     {
+        /* Socket begins listening for connections */
         if (listen(server_socket, 5) < 0)
         {
             fprintf(stderr, "Socket listening failed.\n");
@@ -105,14 +107,77 @@ int main(int argc, const char * argv[]) {
                 
                 
                 /* Receiving cipher text and generated key text for decryption */
-                charsRead = recv(establishedConnectionFD, buffer, BUFFER_SIZE - 1, 0);
-                if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
+                char tempBuffer[BUFFER_SIZE];
+                char numOfBytes[20];
+                int bytes;
+                int count = 0;
                 
+                memset(numOfBytes, '\0', sizeof(numOfBytes));
+                
+                /* Receiving number of bytes and converting the string to an int for the cipher text string */
+                recv(establishedConnectionFD, numOfBytes, sizeof(numOfBytes) - 1, 0);
+                bytes = atoi(numOfBytes);
+                
+                
+                
+                /* Sending back a message saying that the data was received */
                 charsRead = send(establishedConnectionFD, messageReceived, strlen(messageReceived), 0);
                 if (charsRead < 0) { fprintf(stderr, "Error writing to the socket.\n"); }
                 
-                charsRead = recv(establishedConnectionFD, buffer2, BUFFER_SIZE - 1, 0);
-                if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
+                
+                /* Receiving cipher text for decryption */
+                /* Storing the received data into a temporary buffer and concatenating it onto buffer.
+                 The characters read is added to count each iteration. The current count is
+                 subtracted from the number of bytes expected and represents the size to be read
+                 into the temporary buffer. The iteration will end when count is not less than
+                 the number of bytes indicating all bytes are read */
+                while (count < bytes)
+                {
+                    memset(tempBuffer, '\0', sizeof(tempBuffer));
+                    
+                    charsRead = recv(establishedConnectionFD, tempBuffer, bytes - count, 0);
+                    if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
+                    
+                    strcat(buffer, tempBuffer);
+                    count += (int)charsRead;
+                }
+                
+                
+                
+                
+                /* Sending back a message saying that the data was received */
+                charsRead = send(establishedConnectionFD, messageReceived, strlen(messageReceived), 0);
+                if (charsRead < 0) { fprintf(stderr, "Error writing to the socket.\n"); }
+                
+                
+                /* Receiving number of bytes and converting the string to an int for the key string */
+                memset(numOfBytes, '\0', sizeof(numOfBytes));
+                recv(establishedConnectionFD, numOfBytes, sizeof(numOfBytes) - 1, 0);
+                bytes = atoi(numOfBytes);   /* Number of characters expected */
+                count = 0;
+                
+                
+                /* Sending back a message saying that the data was received */
+                charsRead = send(establishedConnectionFD, messageReceived, strlen(messageReceived), 0);
+                if (charsRead < 0) { fprintf(stderr, "Error writing to the socket.\n"); }
+                
+                
+                /* Receiving generated key for decryption */
+                /* Storing the received data into a temporary buffer and concatenating it onto buffer2.
+                  The characters read is added to count each iteration. The current count is
+                  subtracted from the number of bytes expected and represents the size to be read
+                  into the temporary buffer. The iteration will end when count is not less than
+                  the number of bytes indicating all bytes are read */
+                while (count < bytes)
+                {
+                    memset(tempBuffer, '\0', sizeof(tempBuffer));
+                    
+                    charsRead = recv(establishedConnectionFD, tempBuffer, bytes - count, 0);
+                    if (charsRead < 0) { fprintf(stderr, "Message receive error.\n"); }
+                    
+                    strcat(buffer2, tempBuffer);
+                    count += (int)charsRead;
+                }
                 
                 plain_string = (char *)malloc(sizeof(char) * strlen(buffer));  /* Set plain string to length of cipher text (buffer #1) */
                 memset(plain_string, '\0', strlen(buffer));
@@ -147,8 +212,17 @@ int main(int argc, const char * argv[]) {
                 }
 
                 
+                int checkSend = -5;
+                
+                /* Sending the decrypted text back to the client */
                 charsRead = send(establishedConnectionFD, plain_string, strlen(plain_string), 0);
                 if (charsRead < 0) { fprintf(stderr, "Error writing to the socket.\n"); }
+                do
+                {
+                    ioctl(establishedConnectionFD, TIOCOUTQ, &checkSend);
+                } while (checkSend > 0);    /* REFERENCED the ioctl block from 4.2 Verified Sending */
+                
+                
                 
                 close(establishedConnectionFD);
                 free(plain_string);
@@ -158,18 +232,7 @@ int main(int argc, const char * argv[]) {
                 
             default:
                 /* Parent process */
-                waitpid(spawnPID, &exitMethod, 0);
-                
-                //            if (WIFEXITED(exitMethod))
-                //            {
-                //                printf("Child process exited with: %d\n", WEXITSTATUS(exitMethod));
-                //                fflush(stdout);
-                //            }
-                //            else
-                //            {
-                //                printf("Child process was terminated with signal %d\n", WTERMSIG(exitMethod));
-                //                fflush(stdout);
-                //            }
+                waitpid(-1, &exitMethod, WNOHANG);
         }
     }
     
